@@ -53,6 +53,7 @@ OP_RETURN_MAX_BLOCKS = 10  # maximum number of blocks to try when retrieving dat
 
 OP_RETURN_NET_TIMEOUT = 10  # how long to time out (in seconds) when communicating with bitcoin node
 
+SATOSHI_BTC_VALUE = 0.00000001
 
 # User-facing functions
 
@@ -103,6 +104,19 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False):
     # Sign and send the transaction, return result
 
     return OP_RETURN_sign_send_txn(raw_txn, testnet)
+
+
+def calculate_transaction_fee(transaction_size, satoshis_per_byte, default=True):
+    if not default:
+        return SATOSHI_BTC_VALUE * satoshis_per_byte * transaction_size
+    return OP_RETURN_BTC_FEE
+
+
+def calculate_transaction_size(raw_txn, testnet)
+    signed_txn = OP_RETURN_bitcoin_cmd('signrawtransaction', testnet, raw_txn)
+    if not ('complete' in signed_txn and signed_txn['complete']):
+        return {'error': 'Could not sign the transaction'}
+    txn_unpacked = OP_RETURN_unpack_txn(OP_RETURN_hex_to_bin(raw_txn))
 
 
 def OP_RETURN_store(data, testnet=False):
@@ -826,3 +840,7 @@ def OP_RETURN_hex_to_bin(hex):
 
 def OP_RETURN_bin_to_hex(string):
     return binascii.b2a_hex(string).decode('utf-8')
+
+
+
+
