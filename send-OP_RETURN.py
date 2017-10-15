@@ -43,11 +43,16 @@ if len(sys.argv) > 4:
 else:
     testnet = False
 
+if len(sys.argv) > 5:
+    satoshis_per_byte = sys.argv[5]
+else:
+    satoshis_per_byte = 0
+
 metadata_from_hex = OP_RETURN_hex_to_bin(metadata)
 if metadata_from_hex is not None:
     metadata = metadata_from_hex
 
-result = OP_RETURN_send(send_address, float(send_amount), metadata, testnet)
+result = OP_RETURN_send(send_address, float(send_amount), metadata, testnet, float(satoshis_per_byte))
 
 if 'error' in result:
     print('Error: ' + result['error'])

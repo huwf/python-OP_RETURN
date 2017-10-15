@@ -23,8 +23,17 @@
 # THE SOFTWARE.
 
 
-import subprocess, json, time, random, os.path, binascii, struct, string, re, hashlib
-
+import binascii
+import hashlib
+import json
+import os.path
+import random
+import re
+import struct
+import subprocess
+import time
+from decimal import *
+getcontext().prec = 8
 # Python 2-3 compatibility logic
 
 try:
@@ -35,7 +44,7 @@ except NameError:
 # User-defined quasi-constants
 
 OP_RETURN_BITCOIN_IP = '127.0.0.1'  # IP address of your bitcoin node
-OP_RETURN_BITCOIN_USE_CMD = False  # use command-line instead of JSON-RPC?
+OP_RETURN_BITCOIN_USE_CMD = True  # use command-line instead of JSON-RPC?
 
 if OP_RETURN_BITCOIN_USE_CMD:
     OP_RETURN_BITCOIN_PATH = '/usr/bin/bitcoin-cli'  # path to bitcoin-cli executable on this server
@@ -45,19 +54,20 @@ else:
     OP_RETURN_BITCOIN_USER = ''  # leave empty to read from ~/.bitcoin/bitcoin.conf (Unix only)
     OP_RETURN_BITCOIN_PASSWORD = ''  # leave empty to read from ~/.bitcoin/bitcoin.conf (Unix only)
 
-OP_RETURN_BTC_FEE = 0.0001  # BTC fee to pay per transaction
-OP_RETURN_BTC_DUST = 0.00001  # omit BTC outputs smaller than this
+OP_RETURN_BTC_FEE = Decimal(0.0001)  # BTC fee to pay per transaction
+OP_RETURN_BTC_DUST = Decimal(0.00001)  # omit BTC outputs smaller than this
 
 OP_RETURN_MAX_BYTES = 80  # maximum bytes in an OP_RETURN (80 as of Bitcoin 0.11)
 OP_RETURN_MAX_BLOCKS = 10  # maximum number of blocks to try when retrieving data
 
 OP_RETURN_NET_TIMEOUT = 10  # how long to time out (in seconds) when communicating with bitcoin node
 
-SATOSHI_BTC_VALUE = 0.00000001
+SATOSHI_BTC_VALUE = Decimal(0.00000001)
+
 
 # User-facing functions
 
-def OP_RETURN_send(send_address, send_amount, metadata, testnet=False):
+def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_per_byte=0):
     # Validate some parameters
 
     if not OP_RETURN_bitcoin_check(testnet):
@@ -79,16 +89,37 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False):
         return {'error': 'Metadata has ' + str(metadata_len) + ' bytes but is limited to ' + str(
             OP_RETURN_MAX_BYTES) + ' (see OP_RETURN_MAX_BYTES)'}
 
-    # Calculate amounts and choose inputs
 
-    output_amount = send_amount + OP_RETURN_BTC_FEE
 
+    transaction_fee = OP_RETURN_BTC_FEE
+    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=transaction_fee)
+
+    if satoshis_per_byte:
+        # Sign the transaction and calculate fee based on length
+
+        while True:
+            transaction_length_bytes = int(len(signed_txn['hex']) / 2)
+            if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
+                break
+            transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
+            signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=transaction_fee)
+
+
+    send_txid = OP_RETURN_bitcoin_cmd('sendrawtransaction', testnet, signed_txn['hex'])
+    if not (isinstance(send_txid, basestring) and len(send_txid) == 64):
+        return {'error': 'Could not send the transaction'}
+
+    return {'txid': str(send_txid)}
+
+
+def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=OP_RETURN_BTC_FEE):
+    output_amount = Decimal(send_amount) + fee
     inputs_spend = OP_RETURN_select_inputs(output_amount, testnet)
 
     if 'error' in inputs_spend:
         return {'error': inputs_spend['error']}
 
-    change_amount = inputs_spend['total'] - output_amount
+    change_amount = Decimal(inputs_spend['total']) - output_amount
 
     # Build the raw transaction
 
@@ -97,26 +128,20 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False):
     outputs = {send_address: send_amount}
 
     if change_amount >= OP_RETURN_BTC_DUST:
-        outputs[change_address] = change_amount
+        outputs[change_address] = str(Decimal(change_amount).quantize(Decimal('.0000001')))
 
     raw_txn = OP_RETURN_create_txn(inputs_spend['inputs'], outputs, metadata, len(outputs), testnet)
 
-    # Sign and send the transaction, return result
-
-    return OP_RETURN_sign_send_txn(raw_txn, testnet)
+    return OP_RETURN_bitcoin_cmd('signrawtransaction', testnet, raw_txn)
 
 
 def calculate_transaction_fee(transaction_size, satoshis_per_byte, default=True):
+
     if not default:
-        return SATOSHI_BTC_VALUE * satoshis_per_byte * transaction_size
+        satoshis_per_byte = Decimal(satoshis_per_byte)
+        fee = Decimal(SATOSHI_BTC_VALUE * satoshis_per_byte * Decimal(transaction_size))
+        return fee
     return OP_RETURN_BTC_FEE
-
-
-def calculate_transaction_size(raw_txn, testnet)
-    signed_txn = OP_RETURN_bitcoin_cmd('signrawtransaction', testnet, raw_txn)
-    if not ('complete' in signed_txn and signed_txn['complete']):
-        return {'error': 'Could not sign the transaction'}
-    txn_unpacked = OP_RETURN_unpack_txn(OP_RETURN_hex_to_bin(raw_txn))
 
 
 def OP_RETURN_store(data, testnet=False):
@@ -469,7 +494,7 @@ def OP_RETURN_bitcoin_cmd(command, testnet, *args):  # more params are read from
                 if (parts[0] == 'rpcpassword') and not len(password):
                     password = parts[1]
 
-        if not len(port):
+        if not port:
             port = 18332 if testnet else 8332
 
         if not (len(user) and len(password)):
