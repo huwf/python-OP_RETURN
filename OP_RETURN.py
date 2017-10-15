@@ -92,18 +92,19 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_
 
 
     transaction_fee = OP_RETURN_BTC_FEE
-    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=transaction_fee)
+    # signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee)
+    #
+    # if satoshis_per_byte:
+    #     # Sign the transaction and calculate fee based on length
+    #
+    #     while True:
+    #         transaction_length_bytes = int(len(signed_txn['hex']) / 2)
+    #         if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
+    #             break
+    #         transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
+    #         signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=transaction_fee)
 
-    if satoshis_per_byte:
-        # Sign the transaction and calculate fee based on length
-
-        while True:
-            transaction_length_bytes = int(len(signed_txn['hex']) / 2)
-            if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
-                break
-            transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
-            signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=transaction_fee)
-
+    signed_txn = calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, None)
 
     send_txid = OP_RETURN_bitcoin_cmd('sendrawtransaction', testnet, signed_txn['hex'])
     if not (isinstance(send_txid, basestring) and len(send_txid) == 64):
@@ -112,7 +113,34 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_
     return {'txid': str(send_txid)}
 
 
-def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee=OP_RETURN_BTC_FEE):
+def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, inputs=None):
+    """
+    Rather than try and calculate, we sign the transaction with a default fee.
+    Then, we calculate the length in bytes and generate a fee with satoshis_per_bye,
+    Add that to the transaction, and sign again.  
+    Keep checking the length in case the new fee knocks out the calculations
+    :param send_address: 
+    :param send_amount: 
+    :param metadata: 
+    :param testnet: 
+    :param satoshis_per_byte: 
+    :param inputs: In the case of transactions being chained together, Coinspark passes the output of the
+    previous transaction to the new transaction to link them together to allow the message to be reassembled.
+    If `inputs` exists, those inputs will be used and not generating new inputs.
+    :return: 
+    """
+    transaction_fee = OP_RETURN_BTC_FEE
+    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee)
+    # TODO: Need to add some protection against an endless loop here
+    while True:
+        transaction_length_bytes = int(len(signed_txn['hex']) / 2)
+        if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
+            return signed_txn
+        transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
+        signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs)
+
+
+def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee, inputs=None):
     output_amount = Decimal(send_amount) + fee
     inputs_spend = OP_RETURN_select_inputs(output_amount, testnet)
 
@@ -188,14 +216,20 @@ def OP_RETURN_store(data, testnet=False):
         # Some preparation for this iteration
 
         last_txn = ((data_ptr + OP_RETURN_MAX_BYTES) >= data_len)  # is this the last tx in the chain?
-        change_amount = input_amount - OP_RETURN_BTC_FEE
+        change_amount = Decimal(input_amount) - OP_RETURN_BTC_FEE
         metadata = data[data_ptr:data_ptr + OP_RETURN_MAX_BYTES]
+
+        create_and_sign_transaction(send_address, OP_RETURN_BTC_DUST, metadata, testnet, fee=OP_RETURN_BTC_FEE, inputs=None)
+
+
 
         # Build and send this transaction
 
         outputs = {}
         if change_amount >= OP_RETURN_BTC_DUST:  # might be skipped for last transaction
-            outputs[change_address] = change_amount
+            # outputs[change_address] = change_amount
+            outputs[change_address] = str(Decimal(change_amount).quantize(Decimal('.0000001')))
+
 
         raw_txn = OP_RETURN_create_txn(inputs, outputs, metadata, len(outputs) if last_txn else 0, testnet)
 
@@ -378,9 +412,9 @@ def OP_RETURN_create_txn(inputs, outputs, metadata, metadata_pos, testnet):
     if metadata_len <= 75:
         payload = bytearray((metadata_len,)) + metadata  # length byte + data (https://en.bitcoin.it/wiki/Script)
     elif metadata_len <= 256:
-        payload = "\x4c" + bytearray((metadata_len,)) + metadata  # OP_PUSHDATA1 format
+        payload = bytes("\x4c".encode('ascii')) + bytearray((metadata_len,)) + metadata  # OP_PUSHDATA1 format
     else:
-        payload = "\x4d" + bytearray((metadata_len % 256,)) + bytearray(
+        payload = bytes("\x4d".encode('ascii')) + bytearray((metadata_len % 256,)) + bytearray(
             (int(metadata_len / 256),)) + metadata  # OP_PUSHDATA2 format
 
     metadata_pos = min(max(0, metadata_pos), len(txn_unpacked['vout']))  # constrain to valid values
