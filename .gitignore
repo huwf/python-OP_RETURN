@@ -100,3 +100,4 @@ ENV/
 
 # Project specific
 stored_data/
+api_keys.json
