@@ -97,3 +97,6 @@ ENV/
 
 # Pycharm
 .idea/
+
+# Project specific
+stored_data/
