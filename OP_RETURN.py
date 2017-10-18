@@ -72,7 +72,7 @@ SATOSHI_BTC_VALUE = Decimal(0.00000001)
 
 # User-facing functions
 
-def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_per_byte=0):
+def OP_RETURN_send(send_address, send_amount, metadata, satoshis_per_byte=0, testnet=False):
     # Validate some parameters
 
     if not OP_RETURN_bitcoin_check(testnet):
@@ -80,6 +80,7 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_
 
     result = OP_RETURN_bitcoin_cmd('validateaddress', testnet, send_address)
     if not ('isvalid' in result and result['isvalid']):
+        log.error('Send address could not be validated: ' + send_address)
         return {'error': 'Send address could not be validated: ' + send_address}
 
     if isinstance(metadata, basestring):
@@ -98,15 +99,19 @@ def OP_RETURN_send(send_address, send_amount, metadata, testnet=False, satoshis_
     transaction_fee = OP_RETURN_BTC_FEE
 
     signed_txn = calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, None)
-    return OP_RETURN_send_txn(signed_txn, testnet)
+    sent_tran = OP_RETURN_send_txn(signed_txn, testnet)
+    if 'error' in sent_tran:
+        log.error('Transaction %s had metadata %s with %d satoshis per byte' % (signed_txn, metadata, satoshis_per_byte))
+    return sent_tran
 
 
 def OP_RETURN_send_txn(signed_txn, testnet, count=0):
+    import traceback
     try:
         send_txid = OP_RETURN_bitcoin_cmd('sendrawtransaction', testnet, signed_txn['hex'])
         if not (isinstance(send_txid, basestring) and len(send_txid) == 64):
             return {'error': 'Could not send the transaction'}
-        print('Transaction %s successful' % signed_txn)
+        log.info('Transaction %s successful' % signed_txn)
 
         return {'txid': str(send_txid)}
     except subprocess.CalledProcessError as ex:
@@ -117,9 +122,8 @@ def OP_RETURN_send_txn(signed_txn, testnet, count=0):
             count += 1
             OP_RETURN_send_txn(signed_txn, testnet, count)
         else:
-            import sys
-            print('Too many tries, going to die now.')
-            sys.exit(1)
+            log.exception('The transaction %s failed' % signed_txn)
+            return {'error': '%s' % str(ex)}
 
 
 def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, inputs=None):
@@ -167,6 +171,7 @@ def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fe
     #     inputs = inputs_spend['inputs']
 
     if 'error' in inputs_spend:
+        log.exception("There's an error in inputs_spend %s" % inputs_spend['error'])
         return {'error': inputs_spend['error']}
 
     change_amount = Decimal(inputs_spend['total']) - output_amount
@@ -174,7 +179,6 @@ def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fe
     # Build the raw transaction
 
     change_address = OP_RETURN_bitcoin_cmd('getrawchangeaddress', testnet)
-
     outputs = {send_address: str(Decimal(send_amount).quantize(Decimal('.0000001')))}
 
     if change_amount >= OP_RETURN_BTC_DUST:
@@ -194,7 +198,7 @@ def calculate_transaction_fee(transaction_size, satoshis_per_byte, default=True)
     return OP_RETURN_BTC_FEE
 
 
-def OP_RETURN_store(data, send_address, satoshis_per_byte=100, testnet=False):
+def OP_RETURN_store(send_address, send_amount, data, satoshis_per_byte=100, testnet=False):
     # Data is stored in OP_RETURNs within a series of chained transactions.
     # If the OP_RETURN is followed by another output, the data continues in the transaction spending that output.
     # When the OP_RETURN is the last output, this also signifies the end of the data.
@@ -242,24 +246,8 @@ def OP_RETURN_store(data, send_address, satoshis_per_byte=100, testnet=False):
         metadata = data[data_ptr:data_ptr + OP_RETURN_MAX_BYTES]
 
 
-        raw_txn = calculate_correct_fee(send_address, OP_RETURN_BTC_DUST, metadata, testnet, satoshis_per_byte, inputs)
+        raw_txn = calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, inputs)
         send_result = OP_RETURN_send_txn(raw_txn, testnet)
-
-
-        # Build and send this transaction
-
-        # outputs = {}
-        # if change_amount >= OP_RETURN_BTC_DUST:  # might be skipped for last transaction
-            # outputs[change_address] = change_amount
-            # outputs[change_address] = str(Decimal(change_amount).quantize(Decimal('.0000001')))
-
-
-        # raw_txn = OP_RETURN_create_txn(inputs, outputs, metadata, len(outputs) if last_txn else 0, testnet)
-
-
-        # send_result = OP_RETURN_sign_send_txn(raw_txn, testnet)
-
-        # Check for errors and collect the txid
 
         if 'error' in send_result:
             result['error'] = send_result['error']

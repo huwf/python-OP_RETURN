@@ -31,7 +31,7 @@ def send(argv):
     if len(argv) < 4:
         sys.exit(
             '''Usage:
-    python send_OP_RETURN.py <send-address> <send-amount> <metadata> <satoshis_per_byte> (optional) <testnet (optional)> 
+    python send_OP_RETURN.py send_address, send_amount, metadata, satoshis_per_byte=0 (optional), testnet=False (optional) 
     
     Examples:
     python send_OP_RETURN.py 149wHUMa41Xm2jnZtqgRx94uGbZD9kPXnS 0.001 'Hello, blockchain!'
@@ -53,7 +53,7 @@ def send(argv):
     if metadata_from_hex is not None:
         metadata = metadata_from_hex
 
-    result = OP_RETURN_send(send_address, float(send_amount), metadata, testnet, float(satoshis_per_byte))
+    result = OP_RETURN_send(send_address, float(send_amount), metadata, float(satoshis_per_byte), testnet)
 
     if 'error' in result:
         print('Error: ' + result['error'])

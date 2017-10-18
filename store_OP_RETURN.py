@@ -28,22 +28,25 @@ from OP_RETURN import *
 
 
 def store(argv):
-    if len(argv) < 3:
+    if len(argv) < 4:
         sys.exit(
             '''Usage:
-    python store_OP_RETURN.py <data> <send_address> <satoshis_per_byte (optional)> <testnet (optional)> '''
+            
+    python store_OP_RETURN.py <send_address> <send_amount> <data> <satoshis_per_byte (optional)> <testnet (optional)> '''
         )
 
-    data = argv[1]
-    send_address = argv[2]
+
+    send_address = argv[0]
+    send_amount = argv[1]
+    data = argv[2]
     satoshis_per_byte = 0
 
-    if len(argv) > 3:
-        satoshis_per_byte = float(argv[3])
-
-
     if len(argv) > 4:
-        testnet = bool(argv[4])
+        satoshis_per_byte = float(argv[4])
+
+
+    if len(argv) > 5:
+        testnet = bool(argv[5])
     else:
         testnet = False
 
@@ -51,7 +54,7 @@ def store(argv):
     if data_from_hex is not None:
         data = data_from_hex
 
-    result = OP_RETURN_store(data, send_address, satoshis_per_byte, testnet)
+    result = OP_RETURN_store(send_address, send_amount, data, satoshis_per_byte, testnet)
 
     if 'error' in result:
         print('Error: ' + result['error'])
