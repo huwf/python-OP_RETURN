@@ -52,15 +52,21 @@ def do_transactions(func, testnet):
         path = get_and_create_path(OUTPUT_PATH, datetime.now())
         with open('%s/%s.csv' % (path, func_str), 'w') as output:
             writer = csv.writer(output)
-            writer.writerow([func_str, 'txid', 'satoshis_per_byte', 'sent_stamp'])
-            for i in range(290, 0, -10):
+            headings = [func_str, 'txid', 'satoshis_per_byte', 'sent_stamp']
+            if func_str == 'store':
+                headings.append('ref')
+            writer.writerow(headings)
+            for i in range(290, 0, -20):
                 i = 20
-                if func_str == 'send':
-                    result = func([func_str, ADDRESS, 0, f.read(), i, testnet])
-                elif func_str == 'store':
-                    result = func([func_str])
-                log.info('Completed "send" function with fees of %d' % i)
-                writer.writerow(['send', result['txid'], i, datetime.strftime(datetime.now(), '%Y-%m-%dT%H:%M:%S')])
+                result = func([func_str, ADDRESS, 0, f.read(), i, testnet])
+                log.info('Completed "%s" function with fees of %d' % (func_str, i))
+                if 'txids' in result:
+                    for txid in result['txids']:
+                        writer.writerow(
+                            [func_str, txid, i, datetime.strftime(datetime.now(), '%Y-%m-%dT%H:%M:%S'), result['ref']])
+
+                else:
+                    writer.writerow([func_str, result['txid'], i, datetime.strftime(datetime.now(), '%Y-%m-%dT%H:%M:%S')])
                 break
                 # We don't want to end up with too many transactions in the mempool at any one time
                 # This should hopefully reduce the amount

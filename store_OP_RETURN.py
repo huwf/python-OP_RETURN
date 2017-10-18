@@ -36,14 +36,13 @@ def store(argv):
         )
 
 
-    send_address = argv[0]
-    send_amount = argv[1]
-    data = argv[2]
+    send_address = argv[1]
+    send_amount = argv[2]
+    data = argv[3]
     satoshis_per_byte = 0
 
     if len(argv) > 4:
         satoshis_per_byte = float(argv[4])
-
 
     if len(argv) > 5:
         testnet = bool(argv[5])
@@ -57,7 +56,7 @@ def store(argv):
     result = OP_RETURN_store(send_address, send_amount, data, satoshis_per_byte, testnet)
 
     if 'error' in result:
-        print('Error: ' + result['error'])
+        log.exception('Error: ' + result['error'])
     else:
         print("TxIDs:\n" + "\n".join(result['txids']) + "\n\nRef: " + result[
             'ref'] + "\n\nWait a few seconds then check on: http://" +
