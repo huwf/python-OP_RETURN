@@ -60,7 +60,7 @@ def do_transactions(func, testnet):
             if func_str == 'store':
                 headings.append('ref')
             writer.writerow(headings)
-            for i in range(290, 0, -20):
+            for i in range(290, 0, -40):
                 # i = 20
                 result = func([func_str, ADDRESS, 0, data, i, testnet])
                 log.info('Completed "%s" function with fees of %d' % (func_str, i))
