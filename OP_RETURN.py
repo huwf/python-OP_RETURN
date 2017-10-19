@@ -73,7 +73,7 @@ SATOSHI_BTC_VALUE = Decimal(0.00000001)
 
 # User-facing functions
 
-def OP_RETURN_send(send_address, send_amount, metadata, satoshis_per_byte=0, testnet=False):
+def OP_RETURN_send(send_address, send_amount, metadata, satoshis_per_byte=0, testnet=False, repeats=0):
     # Validate some parameters
 
     if not OP_RETURN_bitcoin_check(testnet):
@@ -101,7 +101,7 @@ def OP_RETURN_send(send_address, send_amount, metadata, satoshis_per_byte=0, tes
 
     transaction_fee = OP_RETURN_BTC_FEE
 
-    signed_txn = calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, None)
+    signed_txn = calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, None, int(repeats))
     sent_tran = OP_RETURN_send_txn(signed_txn, testnet)
     if 'error' in sent_tran:
         log.error('Transaction %s had metadata %s with %d satoshis per byte' % (signed_txn, metadata, satoshis_per_byte))
@@ -129,7 +129,7 @@ def OP_RETURN_send_txn(signed_txn, testnet, count=0):
             return {'error': '%s' % str(ex)}
 
 
-def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, inputs=None):
+def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis_per_byte, inputs=None, repeats=0):
     """
     Rather than try and calculate, we sign the transaction with a default fee.
     Then, we calculate the length in bytes and generate a fee with satoshis_per_bye,
@@ -143,17 +143,18 @@ def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis
     :param inputs: In the case of transactions being chained together, Coinspark passes the output of the
     previous transaction to the new transaction to link them together to allow the message to be reassembled.
     If `inputs` exists, those inputs will be used and not generating new inputs.
+    :param repeats: For sending multiple, small, transactions to randomly generated addresses on the same server
     :return: 
     """
     transaction_fee = OP_RETURN_BTC_FEE
-    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, 128)
+    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, repeats)
     # TODO: Need to add some protection against an endless loop here
     while True:
         transaction_length_bytes = int(len(signed_txn['hex']) / 2)
         if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
             return signed_txn
         transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
-        signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, 128)
+        signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, repeats)
 
 
 def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee, inputs=None, repeats=0):
@@ -202,11 +203,9 @@ def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fe
     change_address = OP_RETURN_bitcoin_cmd('getrawchangeaddress', testnet)
     outputs = {send_address: str(Decimal(send_amount).quantize(Decimal('.0000001')))}
 
-
     if extra_outputs:
         for out in extra_outputs:
             outputs[out] = str(Decimal(send_amount).quantize(Decimal('.0000001')))
-
 
     if change_amount >= OP_RETURN_BTC_DUST:
         outputs[change_address] = str(Decimal(change_amount).quantize(Decimal('.0000001')))
@@ -242,27 +241,12 @@ def OP_RETURN_store(send_address, send_amount, data, satoshis_per_byte=100, test
     if data_len == 0:
         return {'error': 'Some data is required to be stored'}
 
-    # change_address = OP_RETURN_bitcoin_cmd('getrawchangeaddress', testnet)
-
-    # Calculate amounts and choose first inputs to use
-
-    # output_amount = OP_RETURN_BTC_FEE * int(
-    #     (data_len + OP_RETURN_MAX_BYTES - 1) / OP_RETURN_MAX_BYTES)  # number of transactions required
-
-    # inputs_spend = OP_RETURN_select_inputs(output_amount, testnet)
-    # if 'error' in inputs_spend:
-    #     return {'error': inputs_spend['error']}
-
-    # inputs = inputs_spend['inputs']
-    # input_amount = inputs_spend['total']
-
     # Find the current blockchain height and mempool txids
 
     height = int(OP_RETURN_bitcoin_cmd('getblockcount', testnet))
     avoid_txids = OP_RETURN_bitcoin_cmd('getrawmempool', testnet)
 
     # Loop to build and send transactions
-
     result = {'txids': []}
     inputs = None
     for data_ptr in range(0, data_len, OP_RETURN_MAX_BYTES):
@@ -291,10 +275,6 @@ def OP_RETURN_store(send_address, send_amount, data, satoshis_per_byte=100, test
             'txid': send_result['txid'],
             'vout': 1,
         }]
-
-        # input_amount = change_amount
-
-    # Return the final result
 
     return result
 

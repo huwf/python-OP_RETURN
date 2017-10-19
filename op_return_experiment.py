@@ -93,7 +93,6 @@ def get_transaction_info(hash, testnet):
     return transaction
 
 
-
 def calculate_transaction_costs(path, testnet):
     with open(path) as f:
         reader = csv.reader(f)
@@ -104,7 +103,7 @@ def calculate_transaction_costs(path, testnet):
         size = transaction['size']
         total_fee = 0
 
-        for fee in range(290, 10, -40):
+        for fee in range(290, 10, -60):
             # fee = transaction['total_fee']
             total_fee += (size * fee)
 
@@ -139,15 +138,15 @@ if __name__ == '__main__':
         testnet = sys.argv[2]
     log.info('Setting testnet to %s' % str(testnet))
 
-    # get_fees_data()
-    # get_latest_block(testnet)
-    # do_transactions(send, testnet)
-    # do_transactions(store, testnet)
-    total = calculate_transaction_costs(
-        os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017,10,18,18,0,0)), 'send.csv'), True)
-    print('Total: %d' % total)
-
-    total = calculate_multiple_transaction_costs(
-        os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017, 10, 18, 18, 0, 0)), 'store.csv'), True)
-    print('Total: %d' % total)
+    get_fees_data()
+    get_latest_block(testnet)
+    do_transactions(send, testnet)
+    do_transactions(store, testnet)
+    # total = calculate_transaction_costs(
+    #     os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017,10,18,18,0,0)), 'send.csv'), True)
+    # print('Total: %d' % total)
+    #
+    # total = calculate_multiple_transaction_costs(
+    #     os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017, 10, 18, 18, 0, 0)), 'store.csv'), True)
+    # print('Total: %d' % total)
     # send()
