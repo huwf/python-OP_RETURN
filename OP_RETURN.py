@@ -39,6 +39,7 @@ import time
 
 import logging
 log = logging.getLogger('__main__')
+log.setLevel(logging.DEBUG)
 # Python 2-3 compatibility logic
 
 try:
@@ -87,6 +88,8 @@ def OP_RETURN_send(send_address, send_amount, metadata, satoshis_per_byte=0, tes
         metadata = metadata.encode('utf-8')  # convert to binary string
 
     metadata_len = len(metadata)
+
+
 
     if metadata_len > 65536:
         return {'error': 'This library only supports metadata up to 65536 bytes in size'}
@@ -143,20 +146,38 @@ def calculate_correct_fee(send_address, send_amount, metadata, testnet, satoshis
     :return: 
     """
     transaction_fee = OP_RETURN_BTC_FEE
-    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs)
+    signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, 128)
     # TODO: Need to add some protection against an endless loop here
     while True:
         transaction_length_bytes = int(len(signed_txn['hex']) / 2)
         if Decimal(transaction_length_bytes) * Decimal(satoshis_per_byte) * SATOSHI_BTC_VALUE == transaction_fee:
             return signed_txn
         transaction_fee = calculate_transaction_fee(transaction_length_bytes, satoshis_per_byte, False)
-        signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs)
+        signed_txn = create_and_sign_transaction(send_address, send_amount, metadata, testnet, transaction_fee, inputs, 128)
 
 
-def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee, inputs=None):
+def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fee, inputs=None, repeats=0):
+    """
+    
+    :param send_address: 
+    :param send_amount: 
+    :param metadata: 
+    :param testnet: 
+    :param fee: 
+    :param inputs: 
+    :param repeats: If we want multiple outputs, we will need to run this several times
+    :return: 
+    """
     # TODO: Remove next line (testing)
     # inputs = None
+    extra_outputs = []
+    for i in range(repeats):
+        extra_outputs.append(OP_RETURN_bitcoin_cmd('getrawchangeaddress', testnet))
+
     output_amount = Decimal(send_amount) + fee
+
+    # if repeats:
+    output_amount += Decimal(0.01) * repeats
 
     inputs_spend = OP_RETURN_select_inputs(output_amount, testnet)
 
@@ -180,6 +201,12 @@ def create_and_sign_transaction(send_address, send_amount, metadata, testnet, fe
 
     change_address = OP_RETURN_bitcoin_cmd('getrawchangeaddress', testnet)
     outputs = {send_address: str(Decimal(send_amount).quantize(Decimal('.0000001')))}
+
+
+    if extra_outputs:
+        for out in extra_outputs:
+            outputs[out] = str(Decimal(send_amount).quantize(Decimal('.0000001')))
+
 
     if change_amount >= OP_RETURN_BTC_DUST:
         outputs[change_address] = str(Decimal(change_amount).quantize(Decimal('.0000001')))

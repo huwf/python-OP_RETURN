@@ -5,12 +5,15 @@ import sys
 from datetime import datetime
 from send_OP_RETURN import send
 from store_OP_RETURN import store
+from OP_RETURN import SATOSHI_BTC_VALUE
 import logging
 import csv
 import time
 
 log = logging.getLogger('__main__')
-
+log.setLevel(logging.DEBUG)
+log.addHandler(logging.StreamHandler())
+log.debug('Log set to level %s' % str(log.level))
 
 def get_api_info():
     with open('api_keys.json') as f:
@@ -49,6 +52,7 @@ def get_fees_data():
 def do_transactions(func, testnet):
     with open(os.path.join(os.getcwd(), 'input_data.txt')) as f:
         func_str = func.__name__
+        data = f.read()
         path = get_and_create_path(OUTPUT_PATH, datetime.now())
         with open('%s/%s.csv' % (path, func_str), 'w') as output:
             writer = csv.writer(output)
@@ -57,8 +61,8 @@ def do_transactions(func, testnet):
                 headings.append('ref')
             writer.writerow(headings)
             for i in range(290, 0, -20):
-                i = 20
-                result = func([func_str, ADDRESS, 0, f.read(), i, testnet])
+                # i = 20
+                result = func([func_str, ADDRESS, 0, data, i, testnet])
                 log.info('Completed "%s" function with fees of %d' % (func_str, i))
                 if 'txids' in result:
                     for txid in result['txids']:
@@ -67,7 +71,7 @@ def do_transactions(func, testnet):
 
                 else:
                     writer.writerow([func_str, result['txid'], i, datetime.strftime(datetime.now(), '%Y-%m-%dT%H:%M:%S')])
-                break
+                # break
                 # We don't want to end up with too many transactions in the mempool at any one time
                 # This should hopefully reduce the amount
                 time.sleep(5)
@@ -86,7 +90,44 @@ def get_transaction_info(hash, testnet):
     api_key = API_INFO['API_KEY']
     url = 'https://api.blocktrail.com/v1/%s/transaction/%s?api_key=%s' % ('tbtc' if testnet else 'btc', hash, api_key)
     transaction = requests.get(url).json()
-    print(transaction)
+    return transaction
+
+
+
+def calculate_transaction_costs(path, testnet):
+    with open(path) as f:
+        reader = csv.reader(f)
+        headers = next(reader, None)
+
+        tx_id = next(reader, None)[1]
+        transaction = get_transaction_info(tx_id, testnet)
+        size = transaction['size']
+        total_fee = 0
+
+        for fee in range(290, 10, -40):
+            # fee = transaction['total_fee']
+            total_fee += (size * fee)
+
+        return total_fee
+        # break
+
+
+def calculate_multiple_transaction_costs(path, testnet):
+    with open(path) as f:
+        reader = csv.reader(f)
+        headers = next(reader, None)
+        size = 0
+        total_fee = 0
+        for i in range(3):
+            tx_id = next(reader, None)[1]
+            transaction = get_transaction_info(tx_id, testnet)
+            size += transaction['size']
+
+        for fee in range(290, 10, -20):
+            # fee = transaction['total_fee']
+            total_fee += (size * fee)
+
+        return total_fee
 
 
 if __name__ == '__main__':
@@ -98,10 +139,15 @@ if __name__ == '__main__':
         testnet = sys.argv[2]
     log.info('Setting testnet to %s' % str(testnet))
 
-    get_fees_data()
-    get_latest_block(testnet)
-    do_transactions(send, testnet)
-    do_transactions(store, testnet)
+    # get_fees_data()
+    # get_latest_block(testnet)
+    # do_transactions(send, testnet)
+    # do_transactions(store, testnet)
+    total = calculate_transaction_costs(
+        os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017,10,18,18,0,0)), 'send.csv'), True)
+    print('Total: %d' % total)
 
-
-
+    total = calculate_multiple_transaction_costs(
+        os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017, 10, 18, 18, 0, 0)), 'store.csv'), True)
+    print('Total: %d' % total)
+    # send()
