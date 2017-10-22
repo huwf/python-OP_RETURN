@@ -9,6 +9,7 @@ from OP_RETURN import SATOSHI_BTC_VALUE
 import logging
 import csv
 import time
+from collections import OrderedDict
 
 log = logging.getLogger('__main__')
 log.setLevel(logging.DEBUG)
@@ -45,8 +46,11 @@ def get_and_create_path(output_path, now):
 def get_fees_data():
     path = get_and_create_path(OUTPUT_PATH, datetime.now())
     with open('%s/fees.json' % path, 'w') as f:
-        js = requests.get('https://bitcoinfees.21.co/api/v1/fees/list').json()
-        json.dump(js, f)
+        js = requests.get('https://bitcoinfees.21.co/api/v1/fees/list').text
+        js_obj = json.loads(js, object_pairs_hook=OrderedDict)
+        json.dump(js_obj, f)
+        return js_obj
+
 
 
 def do_transactions(func, testnet):
@@ -93,7 +97,34 @@ def get_transaction_info(hash, testnet):
     return transaction
 
 
-def calculate_transaction_costs(path, testnet):
+def calculate_price_points(amount_of_points):
+    js = get_fees_data()
+    index = 0
+    zero_fee = 0
+    zero_fee_gap = 0
+    fees = js['fees']
+    for key in fees:
+        if key['maxDelay'] == 0:
+            zero_fee = key['minFee']
+            print('zero_fee = %d' % zero_fee)
+            break
+        index += 1
+
+    total_fee = 0
+    fees = []
+    for i in range(zero_fee, 10, -(int(zero_fee/amount_of_points))):
+        fee = i - (i%10) + 1
+        print(fee)
+        fees.append(fee)
+    return fees
+
+
+    # for k in range(index, 1, -(int(len(fees[0:index])/7))):
+    #     print(fees[k])
+
+
+
+def calculate_transaction_costs(path, price_points, testnet):
     with open(path) as f:
         reader = csv.reader(f)
         headers = next(reader, None)
@@ -103,7 +134,7 @@ def calculate_transaction_costs(path, testnet):
         size = transaction['size']
         total_fee = 0
 
-        for fee in range(290, 10, -60):
+        for fee in price_points:
             # fee = transaction['total_fee']
             total_fee += (size * fee)
 
@@ -111,7 +142,7 @@ def calculate_transaction_costs(path, testnet):
         # break
 
 
-def calculate_multiple_transaction_costs(path, testnet):
+def calculate_multiple_transaction_costs(path, price_points, testnet):
     with open(path) as f:
         reader = csv.reader(f)
         headers = next(reader, None)
@@ -122,7 +153,7 @@ def calculate_multiple_transaction_costs(path, testnet):
             transaction = get_transaction_info(tx_id, testnet)
             size += transaction['size']
 
-        for fee in range(290, 10, -20):
+        for fee in price_points:
             # fee = transaction['total_fee']
             total_fee += (size * fee)
 
@@ -138,15 +169,19 @@ if __name__ == '__main__':
         testnet = sys.argv[2]
     log.info('Setting testnet to %s' % str(testnet))
 
-    get_fees_data()
-    get_latest_block(testnet)
-    do_transactions(send, testnet)
-    do_transactions(store, testnet)
-    # total = calculate_transaction_costs(
-    #     os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017,10,18,18,0,0)), 'send.csv'), True)
-    # print('Total: %d' % total)
-    #
-    # total = calculate_multiple_transaction_costs(
-    #     os.path.join(get_and_create_path(OUTPUT_PATH, datetime(2017, 10, 18, 18, 0, 0)), 'store.csv'), True)
-    # print('Total: %d' % total)
-    # send()
+    # get_fees_data()
+    # get_latest_block(testnet)
+    # do_transactions(send, testnet)
+    # do_transactions(store, testnet)
+
+
+    path = get_and_create_path(OUTPUT_PATH, datetime.now())
+    points = calculate_price_points(6)
+    # Setting points to a single transaction at the mean cost
+    points = [86]
+    total_cost = calculate_transaction_costs('%s/send.csv' % path, points, 1)
+    total_cost_multiple = calculate_multiple_transaction_costs('%s/store.csv' % path, points, 1)
+    print('total cost: %f + %f = %f' % (total_cost, total_cost_multiple, (total_cost + total_cost_multiple)))
+
+
+
